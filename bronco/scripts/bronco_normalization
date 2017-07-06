@@ -1,0 +1,312 @@
+#! /usr/bin/env python
+##########################################################################
+# NSAp - Copyright (C) CEA, 2013 - 2017
+# Distributed under the terms of the CeCILL-B license, as published by
+# the CEA-CNRS-INRIA. Refer to the LICENSE file or to
+# http://www.cecill.info/licences/Licence_CeCILL-B_V1-en.html
+# for details.
+##########################################################################
+
+# System import
+from __future__ import print_function
+import argparse
+import os
+import shutil
+from datetime import datetime
+import json
+from pprint import pprint
+import textwrap
+from argparse import RawTextHelpFormatter
+
+# Bredala import
+try:
+    import bredala
+    bredala.USE_PROFILER = False
+    bredala.register("bronco.normalization",
+                     names=["n4_bias_field_correction",
+                            "whitestripe",
+                            "whitestripe_norm",
+                            "intersect_masks"])
+    bredala.register("pydcmio.plotting.slicer",
+                     names=["mosaic"])
+except:
+    pass
+
+# Package import
+from bronco import __version__ as version
+from bronco.normalization import n4_bias_field_correction
+from bronco.normalization import whitestripe
+from bronco.normalization import whitestripe_norm
+from bronco.normalization import intersect_masks
+from bronco import ANTSWrapper
+
+# Third party import
+from pydcmio.plotting.slicer import mosaic
+
+
+# Parameters to keep trace
+__hopla__ = ["runtime", "inputs", "outputs"]
+
+
+# Script documentation
+DOC = """
+Image normalization: N4 bias field correction + WhiteStripe normalization.
+
+
+Command example on the T1 Metastasis data:
+
+python $HOME/git/bronco/bronco/scripts/bronco_normalization \
+    -o /volatile/nsap/normalization_t1 \
+    -s 585521174283 \
+    -i /neurospin/radiomics/studies/metastasis/base/585521174283/anat/585521174283_enh-gado_T1w.nii.gz \
+    -r /volatile/nsap/normalization/585521174283/native_bbox.nii.gz \
+    -Q /volatile/nsap/recalage_cathy/results/585521174283/brain.nii.gz \
+    -D t1 \
+    -R 0.1 \
+    -S \
+    -v 2
+
+Command example on the T2 Metastasis data:
+
+python $HOME/git/bronco/bronco/scripts/bronco_normalization \
+    -o /volatile/nsap/normalization_t2 \
+    -s 585521174283 \
+    -i /volatile/nsap/normalization/585521174283/flirt_585521174283_FLAIR.nii.gz \
+    -r /volatile/nsap/normalization/585521174283/native_bbox.nii.gz \
+    -Q /volatile/nsap/normalization/585521174283/brain.native.nii.gz \
+    -D t2 \
+    -S \
+    -v 2
+
+Command example on the T2 Metastasis data using T1 whitestripe (hybrid):
+
+python $HOME/git/bronco/bronco/scripts/bronco_normalization \
+    -o /volatile/nsap/normalization_t2_hybrid \
+    -s 585521174283 \
+    -i /volatile/nsap/normalization/585521174283/585521174283_rAxT2.nii.gz \
+    -r /volatile/nsap/normalization_t1/585521174283/whitestripe/whitestripe.nii.gz /volatile/nsap/normalization_t2/585521174283/whitestripe/whitestripe.nii.gz \
+    -Q /volatile/nsap/recalage_cathy/results/585521174283/brain.nii.gz \
+    -H \
+    -D t2 \
+    -S \
+    -v 2
+"""
+
+
+def is_file(filearg):
+    """ Type for argparse - checks that file exists but does not open.
+    """
+    if not os.path.isfile(filearg):
+        raise argparse.ArgumentError(
+            "The file '{0}' does not exist!".format(filearg))
+    return filearg
+
+
+def is_directory(dirarg):
+    """ Type for argparse - checks that directory exists.
+    """
+    if not os.path.isdir(dirarg):
+        raise argparse.ArgumentError(
+            "The directory '{0}' does not exist!".format(dirarg))
+    return dirarg
+
+
+def get_cmd_line_args():
+    """
+    Create a command line argument parser and return a dict mapping
+    <argument name> -> <argument value>.
+    """
+    parser = argparse.ArgumentParser(
+        prog="bronco_nromalization",
+        description=textwrap.dedent(DOC),
+        formatter_class=RawTextHelpFormatter)
+
+    # Required arguments
+    required = parser.add_argument_group("required arguments")
+    required.add_argument(
+        "-o", "--outdir",
+        required=True, metavar="<path>", type=is_directory,
+        help="the analysis output directory where <outdir>/<sid> will be "
+             "generated.")
+    required.add_argument(
+        "-s", "--sid",
+        required=True,
+        help="the subject identifier.")
+    required.add_argument(
+        "-i", "--inputfile",
+        required=True, type=is_file,
+        help="the input MRI volume to be normalized.")
+    required.add_argument(
+        "-r", "--roifile",
+        required=True, type=is_file, nargs="+",
+        help="the input ROI volume used for intensity normalization. In case "
+             "of hybrid method, each modality whitestripe mask.")
+
+    # Optional arguments
+    parser.add_argument(
+        "-H", "--hybrid",
+        action="store_true",
+        help="if activated, use the T1 whitestripe mask specified in "
+             "'roifile' to normalize. It prevent considering non WM voxels.")
+    required.add_argument(
+        "-D", "--modality",
+        choices=("t1", "t2", "flair"), default="t1",
+        help="the input image modality.")
+    required.add_argument(
+        "-R", "--rm_fraction",
+        type=float, default=0.1,
+        help="define a tail threshold as a fraction of the maximum intensity "
+             "occurence in the histogram.")
+    required.add_argument(
+        "-W", "--whitestripe_width",
+        type=float, default=0.05,
+        help="control the size of the whitestripe around the extracted mode.")
+    parser.add_argument(
+        "-S", "--dosnap",
+        action="store_true",
+        help="if activated, generate QC snaps.")
+    parser.add_argument(
+        "-M", "--n4method",
+        choices=("ants", "itk"), default="ants",
+        help="option used to choose the N4 bias field correction software.")
+    parser.add_argument(
+        "-Q", "--brain",
+        type=is_file,
+        help="the subject brain.")
+    parser.add_argument(
+        "-v", "--verbose",
+        type=int, choices=[0, 1, 2], default=0,
+        help="increase the verbosity level: 0 silent, [1, 2] verbose.")
+
+    # Create a dict of arguments to pass to the 'main' function
+    args = parser.parse_args()
+    kwargs = vars(args)
+    verbose = kwargs.pop("verbose")
+
+    return kwargs, verbose
+
+
+"""
+Parse the command line.
+"""
+inputs, verbose = get_cmd_line_args()
+tool = "bronco_normalization"
+ants_version = None
+if inputs["n4method"] == "ants":
+    ants_version = ANTSWrapper().version
+timestamp = datetime.now().isoformat()
+tool_version = version
+params = locals()
+runtime = dict([(name, params[name])
+               for name in ("tool", "tool_version", "timestamp",
+                            "ants_version")])
+subjdir = os.path.join(inputs["outdir"], inputs["sid"])
+if not os.path.isdir(subjdir):
+    os.mkdir(subjdir)
+outputs = None
+snaps = []
+if inputs["dosnap"]:
+    snapdir = os.path.join(subjdir, "snap")
+    if not os.path.isdir(snapdir):
+        os.mkdir(snapdir)
+if verbose > 0:
+    pprint("[info] Starting registration ...")
+    pprint("[info] Runtime:")
+    pprint(runtime)
+    pprint("[info] Inputs:")
+    pprint(inputs)
+
+
+"""
+Perform the N4 bias field correction
+"""
+n4dir = os.path.join(subjdir, "n4")
+if not os.path.isdir(n4dir):
+    os.mkdir(n4dir)
+bias_field_corrected_file, bias_field_file = n4_bias_field_correction(
+    inputfile=inputs["inputfile"],
+    outdir=n4dir,
+    method=inputs["n4method"],
+    maskfile=inputs["brain"],
+    weightfile=None,
+    nb_iterations=50,
+    convergence_threshold=0.001,
+    bspline_grid_resolution=(1, 1, 1),
+    shrink_factor=4,
+    bspline_order=3,
+    histogram_sharpening_parameters=(0.15, 0.01, 200),
+    verbose=verbose)
+if inputs["dosnap"]:
+    snaps.append(mosaic(
+        impath=bias_field_corrected_file,
+        title="bias_field_corrected",
+        outdir=snapdir))
+    snaps.append(mosaic(
+        impath=bias_field_file,
+        title="bias_field",
+        outdir=snapdir))
+
+
+"""
+Perform white stripe normalisation.
+"""
+whitestripedir = os.path.join(subjdir, "whitestripe")
+if not os.path.isdir(whitestripedir):
+    os.mkdir(whitestripedir)
+if inputs["hybrid"]:
+    whitestripefile = intersect_masks(
+        maskfiles=inputs["roifile"],
+        outdir=whitestripedir,
+        verbose=verbose)
+    whitestripe_mean = None
+    whitestripe_std = None
+else:
+    whitestripefile, whitestripe_mean, whitestripe_std, wsnaps = whitestripe(
+        inputfile=bias_field_corrected_file,
+        roifile=inputs["roifile"][0],
+        modality=inputs["modality"],
+        outdir=whitestripedir,
+        maskfile=inputs["brain"],
+        tail_remove_fraction=inputs["rm_fraction"],
+        whitestripe_width=inputs["whitestripe_width"],
+        verbose=verbose)
+    snaps.extend(wsnaps)
+if inputs["dosnap"]:
+    snaps.append(mosaic(
+        impath=whitestripefile,
+        title="whitestripe",
+        outdir=snapdir))
+whitestripe_normfile, whitestripe_mean, whitestripe_std = whitestripe_norm(
+    inputfile=bias_field_corrected_file,
+    whitestripefile=whitestripefile,
+    outdir=whitestripedir,
+    maskfile=inputs["brain"],
+    verbose=verbose)
+if inputs["dosnap"]:
+    snaps.append(mosaic(
+        impath=whitestripe_normfile,
+        title="whitestripe_norm",
+        outdir=snapdir))
+
+
+"""
+Update the outputs and save them and the inputs in a 'logs' directory.
+"""
+logdir = os.path.join(subjdir, "logs")
+if not os.path.isdir(logdir):
+    os.mkdir(logdir)
+params = locals()
+outputs = dict([(name, params[name])
+               for name in ("bias_field_corrected_file", "bias_field_file",
+                            "whitestripefile", "whitestripe_mean",
+                            "whitestripe_std", "whitestripe_normfile",
+                            "snaps")])
+for name, final_struct in [("inputs", inputs), ("outputs", outputs),
+                           ("runtime", runtime)]:
+    log_file = os.path.join(logdir, "{0}.json".format(name))
+    with open(log_file, "wt") as open_file:
+        json.dump(final_struct, open_file, sort_keys=True, check_circular=True,
+                  indent=4)
+if verbose > 1:
+    print("[info] Outputs:")
+    pprint(outputs)

@@ -1,0 +1,201 @@
+#! /usr/bin/env python
+##########################################################################
+# NSAp - Copyright (C) CEA, 2013 - 2017
+# Distributed under the terms of the CeCILL-B license, as published by
+# the CEA-CNRS-INRIA. Refer to the LICENSE file or to
+# http://www.cecill.info/licences/Licence_CeCILL-B_V1-en.html
+# for details.
+##########################################################################
+
+# System import
+from __future__ import print_function
+import argparse
+import os
+import shutil
+from datetime import datetime
+import json
+from pprint import pprint
+import textwrap
+from argparse import RawTextHelpFormatter
+
+# Bredala import
+try:
+    import bredala
+    bredala.USE_PROFILER = False
+except:
+    pass
+
+# Package import
+from bronco import __version__ as version
+
+# Third party import
+
+
+# Parameters to keep trace
+__hopla__ = ["runtime", "inputs", "outputs"]
+
+
+# Script documentation
+DOC = """
+Image normalization QC: display the normalization results. 
+
+
+Command example on the T1 Metastasis data:
+
+python $HOME/git/bronco/bronco/scripts/bronco_normalization_qc \
+    -o /volatile/nsap/normalization_qc \
+    -i /neurospin/nsap/processed/metastasis/data/whitestripe_hybrid_t1/256914531421/whitestripe/whitestripe_norm.nii.gz  /neurospin/nsap/processed/metastasis/data/whitestripe_hybrid_t1/269717678638/whitestripe/whitestripe_norm.nii.gz \
+    -t /neurospin/nsap/processed/metastasis/data/segmentation/256914531421/fast/brain_seg.nii.gz /neurospin/nsap/processed/metastasis/data/segmentation/269717678638/fast/brain_seg.nii.gz \
+    -n whitestripe_hybrid_t1 \
+    -v 2
+"""
+
+
+def is_file(filearg):
+    """ Type for argparse - checks that file exists but does not open.
+    """
+    if not os.path.isfile(filearg):
+        raise argparse.ArgumentError(
+            "The file '{0}' does not exist!".format(filearg))
+    return filearg
+
+
+def is_directory(dirarg):
+    """ Type for argparse - checks that directory exists.
+    """
+    if not os.path.isdir(dirarg):
+        raise argparse.ArgumentError(
+            "The directory '{0}' does not exist!".format(dirarg))
+    return dirarg
+
+
+def get_cmd_line_args():
+    """
+    Create a command line argument parser and return a dict mapping
+    <argument name> -> <argument value>.
+    """
+    parser = argparse.ArgumentParser(
+        prog="bronco_nromalization",
+        description=textwrap.dedent(DOC),
+        formatter_class=RawTextHelpFormatter)
+
+    # Required arguments
+    required = parser.add_argument_group("required arguments")
+    required.add_argument(
+        "-o", "--outdir",
+        required=True, metavar="<path>", type=is_directory,
+        help="the analysis output directory.")
+    required.add_argument(
+        "-i", "--inputfiles",
+        required=True, type=is_file, nargs="+",
+        help="the input MRI volumes to QC.")
+    required.add_argument(
+        "-t", "--tissuefiles",
+        required=True, type=is_file, nargs="+",
+        help="the tissue volumes.")
+    required.add_argument(
+        "-n", "--name",
+        required=True,
+        help="the analysis name.")
+
+    # Optional arguments
+    parser.add_argument(
+        "-v", "--verbose",
+        type=int, choices=[0, 1, 2], default=0,
+        help="increase the verbosity level: 0 silent, [1, 2] verbose.")
+
+    # Create a dict of arguments to pass to the 'main' function
+    args = parser.parse_args()
+    kwargs = vars(args)
+    verbose = kwargs.pop("verbose")
+
+    return kwargs, verbose
+
+
+"""
+Parse the command line.
+"""
+inputs, verbose = get_cmd_line_args()
+tool = "bronco_normalization_qc"
+timestamp = datetime.now().isoformat()
+tool_version = version
+params = locals()
+runtime = dict([(name, params[name])
+               for name in ("tool", "tool_version", "timestamp")])
+outputs = None
+if verbose > 0:
+    pprint("[info] Starting registration ...")
+    pprint("[info] Runtime:")
+    pprint(runtime)
+    pprint("[info] Inputs:")
+    pprint(inputs)
+
+
+"""
+Create one histogram per tissue type.
+"""
+inputfiles = inputs["inputfiles"]
+tissuefiles = inputs["tissuefiles"]
+
+# Third party import
+import numpy
+import nibabel
+import matplotlib.pyplot as plt
+
+
+# Check input parameters
+if len(inputfiles) != len(tissuefiles):
+    raise ValueError("Need the same number of tissue and input files.")
+
+# Load all the datasets and store data per tissue type
+data = {}
+for ipath, tpath in zip(inputfiles, tissuefiles):
+    input_data = nibabel.load(ipath).get_data()
+    input_data[numpy.isnan(input_data)] = 0
+    input_data[numpy.isinf(input_data)] = 0
+    tissue_data = nibabel.load(tpath).get_data()
+    ttypes = numpy.unique(tissue_data)
+    for label in ttypes:
+        if label == 0:
+            continue
+        if label not in data:
+            data[label] = []
+        label_indices = numpy.where(tissue_data == label)
+        input_roi_data = input_data[label_indices]
+        hist, bin_edges = numpy.histogram(input_roi_data, bins=300,
+                                          density=False)
+        bin_centers = bin_edges[:-1] + numpy.diff(bin_edges) / 2.
+        data[label].append((hist, bin_centers))
+
+# Generate an histogram plot per tissue type
+snaps = []
+for label, plot_data in data.items():
+    fig = plt.figure()
+    for hist, bin_center in plot_data:
+        plt.plot(bin_centers, hist, "b-")
+        plt.title("Label: {0}".format(label))
+    if verbose > 1:
+        plt.show()
+    snaps.append(os.path.join(
+        inputs["outdir"], "{0}_seg_{1}.png".format(inputs["name"], label)))
+    plt.savefig(snaps[-1])
+
+
+"""
+Update the outputs and save them and the inputs in a 'logs' directory.
+"""
+logdir = os.path.join(inputs["outdir"], "logs")
+if not os.path.isdir(logdir):
+    os.mkdir(logdir)
+params = locals()
+outputs = dict([(name, params[name])
+               for name in ("snaps", )])
+for name, final_struct in [("inputs", inputs), ("outputs", outputs),
+                           ("runtime", runtime)]:
+    log_file = os.path.join(logdir, "{0}_{0}.json".format(inputs["name"], name))
+    with open(log_file, "wt") as open_file:
+        json.dump(final_struct, open_file, sort_keys=True, check_circular=True,
+                  indent=4)
+if verbose > 1:
+    print("[info] Outputs:")
+    pprint(outputs)
