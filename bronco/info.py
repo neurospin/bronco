@@ -60,6 +60,7 @@ PROVIDES = ["bronco"]
 REQUIRES = [
     "numpy>=1.6.1",
     "scipy>=0.9.0",
-    "nibabel>=1.1.0"
+    "nibabel>=1.1.0",
+    "pyradiomics>=1.2.0"
 ]
 EXTRA_REQUIRES = {}
