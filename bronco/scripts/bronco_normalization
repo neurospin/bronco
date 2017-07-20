@@ -117,7 +117,7 @@ def get_cmd_line_args():
     <argument name> -> <argument value>.
     """
     parser = argparse.ArgumentParser(
-        prog="bronco_nromalization",
+        prog="bronco_normalization",
         description=textwrap.dedent(DOC),
         formatter_class=RawTextHelpFormatter)
 
@@ -137,7 +137,7 @@ def get_cmd_line_args():
         required=True, type=is_file,
         help="the input MRI volume to be normalized.")
     required.add_argument(
-        "-r", "--roifile",
+        "-r", "--roifiles",
         required=True, type=is_file, nargs="+",
         help="the input ROI volume used for intensity normalization. In case "
              "of hybrid method, each modality whitestripe mask.")
