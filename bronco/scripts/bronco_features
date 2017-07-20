@@ -1,0 +1,195 @@
+#! /usr/bin/env python
+##########################################################################
+# NSAp - Copyright (C) CEA, 2013 - 2017
+# Distributed under the terms of the CeCILL-B license, as published by
+# the CEA-CNRS-INRIA. Refer to the LICENSE file or to
+# http://www.cecill.info/licences/Licence_CeCILL-B_V1-en.html
+# for details.
+##########################################################################
+
+# System import
+from __future__ import print_function
+import argparse
+import os
+import shutil
+from datetime import datetime
+import json
+from pprint import pprint
+import textwrap
+from argparse import RawTextHelpFormatter
+from collections import OrderedDict
+
+# Bredala import
+try:
+    import bredala
+    bredala.USE_PROFILER = False
+    bredala.register("bronco.features",
+                     names=["extract_features_from_roi", "merge_rois"])
+    bredala.register("pydcmio.plotting.slicer",
+                     names=["mosaic"])
+except:
+    pass
+
+# Package import
+from bronco import __version__ as version
+from bronco.features import merge_rois
+from bronco.features import extract_features_from_roi
+
+# Third party import
+import radiomics
+
+
+# Parameters to keep trace
+__hopla__ = ["runtime", "inputs", "outputs"]
+
+
+# Script documentation
+DOC = """
+Generate features based on interest masks using pyradiomics.
+
+
+Command example on the T1 Metastasis data:
+
+python $HOME/git/bronco/bronco/scripts/bronco_features \
+    -o /volatile/nsap/features_t1 \
+    -s 585521174283 \
+    -i /neurospin/nsap/processed/metastasis/data/whitestripe_t1/585521174283/whitestripe/whitestripe_norm.nii.gz \
+    -m /neurospin/radiomics/studies/metastasis/base/585521174283/model10/585521174283_model10_mask_necrosis_2.nii.gz /neurospin/radiomics/studies/metastasis/base/585521174283/model10/585521174283_model10_mask_enh_2.nii.gz \
+    -n necrosis+enh \
+    -v 2
+"""
+
+
+def is_file(filearg):
+    """ Type for argparse - checks that file exists but does not open.
+    """
+    if not os.path.isfile(filearg):
+        raise argparse.ArgumentError(
+            "The file '{0}' does not exist!".format(filearg))
+    return filearg
+
+
+def is_directory(dirarg):
+    """ Type for argparse - checks that directory exists.
+    """
+    if not os.path.isdir(dirarg):
+        raise argparse.ArgumentError(
+            "The directory '{0}' does not exist!".format(dirarg))
+    return dirarg
+
+
+def get_cmd_line_args():
+    """
+    Create a command line argument parser and return a dict mapping
+    <argument name> -> <argument value>.
+    """
+    parser = argparse.ArgumentParser(
+        prog="bronco_features",
+        description=textwrap.dedent(DOC),
+        formatter_class=RawTextHelpFormatter)
+
+    # Required arguments
+    required = parser.add_argument_group("required arguments")
+    required.add_argument(
+        "-o", "--outdir",
+        required=True, metavar="<path>", type=is_directory,
+        help="the analysis output directory where <outdir>/<sid> will be "
+             "generated.")
+    required.add_argument(
+        "-s", "--sid",
+        required=True,
+        help="the subject identifier.")
+    required.add_argument(
+        "-i", "--inputfile",
+        required=True, type=is_file,
+        help="the input MRI volume used to extract the features.")
+    required.add_argument(
+        "-m", "--maskfiles",
+        required=True, type=is_file, nargs="+", metavar="<mask files>",
+        help="input 3d-ROIs where the feature extraction will be performed.")
+    required.add_argument(
+        "-n", "--name",
+        required=True, metavar="<model name>",
+        help="the model name to generate outputs in <outdir>/<sid>/<name>.")
+
+    # Optional arguments
+    parser.add_argument(
+        "-C", "--config",
+        type=is_file,
+        help="the radiomics configuration file to define the features of "
+             "interest.")
+    parser.add_argument(
+        "-v", "--verbose",
+        type=int, choices=[0, 1, 2], default=0,
+        help="increase the verbosity level: 0 silent, [1, 2] verbose.")
+
+    # Create a dict of arguments to pass to the 'main' function
+    args = parser.parse_args()
+    kwargs = vars(args)
+    verbose = kwargs.pop("verbose")
+
+    return kwargs, verbose
+
+
+"""
+Parse the command line.
+"""
+inputs, verbose = get_cmd_line_args()
+tool = "bronco_features"
+radiomics_version = radiomics.__version__
+timestamp = datetime.now().isoformat()
+tool_version = version
+params = locals()
+runtime = dict([(name, params[name])
+               for name in ("tool", "tool_version", "timestamp",
+                            "radiomics_version")])
+modeldir = os.path.join(inputs["outdir"], inputs["sid"], inputs["name"])
+if not os.path.isdir(modeldir):
+    os.makedirs(modeldir)
+outputs = None
+snaps = []
+if verbose > 0:
+    pprint("[info] Starting ROI feature extraction ...")
+    pprint("[info] Runtime:")
+    pprint(runtime)
+    pprint("[info] Inputs:")
+    pprint(inputs)
+
+"""
+Merge ROIs
+"""
+maskfile = merge_rois(inputs["maskfiles"], modeldir)
+
+
+"""
+Perform feature extraction on each ROI
+"""
+features, snaps = extract_features_from_roi(
+    inputfile=inputs["inputfile"],
+    maskfile=maskfile,
+    outdir=modeldir,
+    configfile=inputs["config"])
+featurefile = os.path.join(modeldir, "features.json")
+with open(featurefile, "wt") as open_file:
+    json.dump(features, open_file, sort_keys=True, check_circular=True,
+              indent=4)
+
+
+"""
+Update the outputs and save them and the inputs in a 'logs' directory.
+"""
+logdir = os.path.join(modeldir, "logs")
+if not os.path.isdir(logdir):
+    os.mkdir(logdir)
+params = locals()
+outputs = dict([(name, params[name])
+               for name in ("maskfile", "featurefile", "snaps")])
+for name, final_struct in [("inputs", inputs), ("outputs", outputs),
+                           ("runtime", runtime)]:
+    log_file = os.path.join(logdir, "{0}.json".format(name))
+    with open(log_file, "wt") as open_file:
+        json.dump(final_struct, open_file, sort_keys=True, check_circular=True,
+                  indent=4)
+if verbose > 1:
+    print("[info] Outputs:")
+    pprint(outputs)
