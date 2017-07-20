@@ -279,12 +279,13 @@ def get_last_mode(
         threshold = remove_fraction * max(bin_centers)
         bin_centers = original_bin_centers[original_hist > threshold]
         hist = original_hist[original_hist > threshold]
+        fig = plt.figure()
         plt.plot(original_bin_centers, original_hist, "b-")
         plt.plot(bin_centers, hist + original_hist.max(), "g-")
         plt.title("Tail removal")
         if snapdir is not None:
             snaps.append(os.path.join(snapdir, "trail_remove.png"))
-            plt.savefig(snaps[-1])
+            fig.savefig(snaps[-1])
         if verbose > 1:
             plt.show()
     
@@ -303,6 +304,7 @@ def get_last_mode(
     if verbose > 0:
         print("[info] Relative extrema: {0}.".format(extrema))
         print("[info] Last mode: {0}.".format(last_mode))
+    fig = plt.figure()
     plt.plot(bin_centers * bin_centers_factor, hist * hist_factor, "b-")
     plt.plot(bin_centers * bin_centers_factor,
              fitted_hist * hist_factor, "g--")
@@ -313,7 +315,7 @@ def get_last_mode(
     plt.title("Last peak")
     if snapdir is not None:
         snaps.append(os.path.join(snapdir, "last_peak.png"))
-        plt.savefig(snaps[-1])
+        fig.savefig(snaps[-1])
     if verbose > 1:
         plt.show()
     
@@ -377,6 +379,7 @@ def get_largest_mode(
         print("[info] Relative extema: {0}.".format(extrema))
         print("[info] Largest mode: {0} - {1}.".format(
             largest_ind, largest_mode))
+    fig = plt.figure()
     plt.plot(bin_centers, hist, "b-")
     plt.plot(bin_centers, fitted_hist, "g--")
     plt.plot(bin_centers[extrema], fitted_hist[extrema], "go")
@@ -384,7 +387,7 @@ def get_largest_mode(
     plt.title("Largest mode")
     if snapdir is not None:
         snaps.append(os.path.join(snapdir, "largest_mode.png"))
-        plt.savefig(snaps[-1])
+        fig.savefig(snaps[-1])
     if verbose > 1:
         plt.show()
 
