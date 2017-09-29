@@ -1,74 +1,191 @@
-#! /usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Sep 29 08:40:44 2017
+
+@author: vf140245
+Copyrignt : CEA NeuroSpin - 2017
+"""
 
 # System import
-from nilearn import plotting
-import nibabel
+import nibabel as ni
 import argparse
-import os
-from clindmri.registration.fsl import flirt
 from glob import glob
+import os
+import numpy as np
+
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+from nilearn import plotting
 
 doc = """
-
-Create QC plots (from nilearn) about FLAIR to T1-enh FLIRT
+Create QC plots (from nilearn)
 
 Command:
 ========
 
-python qc_coreg.py -f AxT2.nii.gz -t AxT1enhanced.nii.gz  -o  qc_coreg
-
+python qc_brain.py -i /neurospin/radiomics/studies/metastasis/nsap\
+             -o /volatile/frouin/BRAIN
 """
 
 
 # Parsing
-def is_dir(dirarg):
-    """ Type for argparse - checks that output dir exists.
-    """
-    if not os.path.isdir(dirarg):
-        raise argparse.ArgumentError(
-            "The dir '{0}' does not exist!".format(dirarg))
-    return dirarg
+# def is_dir(dirarg):
+#    """ Type for argparse - checks that output dir exists.
+#    """
+#    if not os.path.isdir(dirarg):
+#        raise argparse.ArgumentError(
+#            "The dir '{0}' does not exist!".format(dirarg))
+#    return dirarg
 
 parser = argparse.ArgumentParser(description=doc)
 parser.add_argument(
     "-v", "--verbose", dest="verbose", type=int, choices=[0, 1, 2], default=0,
     help="increase the verbosity level: 0 silent, [1, 2] verbose.")
 parser.add_argument(
-    "-f", "--flair", dest="flair", metavar="FILE",
-    help="Image to register")
+    "-i", "--in", dest="indir", metavar="DIR",
+    help="Entry directory to parse")
 parser.add_argument(
-    "-t", "--t1gado", dest="t1gado", metavar="FILE",
-    help="Target/Reference image file")
+    "-s", "--subject", dest="subject", default=None,
+    help="Subject id")
 parser.add_argument(
-    "-o", "--out", dest="outfile", metavar="FILE",
-    help="Image file that will contain the qc")
+    "-o", "--out", dest="outfile", metavar="DIR",
+    help="Directory that will contain the snap result")
 args = parser.parse_args()
 
 
-# transform pathnames
-outfile = args.outfile
-flair = args.flair
-t1gado = args.t1gado
-omatfile = os.path.splitext(outfile)[0]
-outfileAxi = '{}_qc_axi.png'.format(omatfile)
-outfileSag = '{}_qc_sag.png'.format(omatfile)
+def adapt_cmap(brain, w=[5, 90]):
+    """
+    Parameters
+    brain: filename  of na nii.gz imag
+    w: window (list(2))
+    """
+    # modify lut
+    cmap_gray = plt.cm.gray
+
+    brain_data = ni.load(brain).get_data()
+    brain_data = brain_data[brain_data > 0]
+    brain_window = np.percentile(brain_data, w)
+    brain_window = np.rint((256 * brain_window) / np.max(brain_data))
+    my_cmap = cmap_gray(np.arange(cmap_gray.N))
+    win = brain_window[1] - brain_window[0]
+    my_cmap[brain_window[0]:brain_window[1], 0] = np.linspace(0, 1, win)
+    my_cmap[brain_window[0]:brain_window[1], 1] = np.linspace(0, 1, win)
+    my_cmap[brain_window[0]:brain_window[1], 2] = np.linspace(0, 1, win)
+
+    return my_cmap
 
 
+# test existence of a list of files
+def files_exist(files):
+    retval = True
+    for f in files:
+        if not os.path.exists(f):
+            retval = False
+            print f
+            break
 
-# QC :  pdf sheet
-bg = nibabel.load(flair)
-anat = nibabel.load(t1gado)
-# image axial
-display = plotting.plot_anat(bg, title="T1 Gado contours", 
-                             display_mode = 'z',
-                             cut_coords = 10)
-display.add_edges(anat)
-display.savefig(outfileAxi)
-display.close()
-# mage coronal
-display = plotting.plot_anat(bg, title="T1 Gado contours", 
-                             display_mode = 'x',
-                             cut_coords = 10)
-display.add_edges(anat)
-display.savefig(outfileSag)
-display.close()
+    return retval
+
+
+def main(spyder_inter):
+
+    # read args
+    if spyder_inter:
+        args = parser.parse_args(
+            ['-i', '/neurospin/radiomics/studies/metastasis/nsap',
+             '-o', '/tmp/brain/',
+             '-s', '187962757123',
+             ])
+    else:
+        args = parser.parse_args()
+
+    # init from args
+    pattern = os.path.join(args.indir, '..', 'base', '*')
+    subjects = [os.path.basename(fn) for fn in glob(pattern)
+                if (os.path.basename(fn)[0].isdigit())]
+    sel_s = args.subject
+    log_error_subjects = []
+
+    if sel_s is not None:
+        print ">> One subject selected ", sel_s
+
+    # Now loop accross subjects
+    for i, s in enumerate(subjects):
+        # for code testing
+        if (sel_s is not None) and (sel_s not in s):
+            continue
+        # Progression
+        print s, ' ', (i+1), '/', len(subjects)
+        # file name
+        brain = os.path.join(args.indir, 'brain', '{}'.format(s),
+                             'brain.nii.gz')
+        t1 = os.path.join(args.indir, '..', 'base', '{}'.format(s),
+                          'anat', '{}_enh-gado_T1w.nii.gz'.format(s))
+        flair = os.path.join(args.indir, 'coreg_rigid', '{}'.format(s),
+                             'flirt', 'flirt_{}_FLAIR.nii.gz'.format(s))
+        # test exist
+        if not files_exist([brain, t1, flair]):
+            print '{}: files missing'.format(s)
+            log_error_subjects.append('{}: files missing'.format(s))
+            continue
+        outfile = os.path.join(args.outfile, '{}_brain_overlays.png'.format(s))
+
+        # set lut
+        brain_cmap = ListedColormap(adapt_cmap(brain, [2, 80]))
+        flair_cmap = ListedColormap(adapt_cmap(flair))
+
+        # multi plots
+        fig = plt.figure("Brain T1/Flair overlays", figsize=(20, 10))
+        fig.subplots_adjust(hspace=0.01, bottom=0.01, left=0.01,
+                            right=0.99, top=0.99)
+        # plot brain over T1
+        fig_id = plt.subplot(4, 1, 1)
+        plotting.plot_roi(roi_img=brain, bg_img=t1,
+                          title="Overlay striped voxels on T1 anatomy",
+                          cmap=plotting.cm.red_transparent,
+                          display_mode='z', alpha=.5,
+                          cut_coords=10, axes=fig_id)
+#        display = plotting.plot_anat(flair, title="Brain over Flair",
+#                                     display_mode='z', cut_coords=10,
+#                                     cmap=flair_cmap,
+#                                     axes=fig_id)
+#        display.add_edges(brain)
+        fig_id = plt.subplot(4, 1, 2)
+        display = plotting.plot_anat(t1, title="Brain over T1 Gado",
+                                     display_mode='x', cut_coords=10,
+                                     cmap=brain_cmap,
+                                     axes=fig_id)
+        display.add_edges(brain)
+        # plot brain over Flair
+        fig_id = plt.subplot(4, 1, 3)
+        plotting.plot_roi(roi_img=brain, bg_img=flair,
+                          title="Overlay striped voxels on T1 anatomy",
+                          cmap=plotting.cm.red_transparent,
+                          display_mode='z', alpha=.5,
+                          cut_coords=10, axes=fig_id)
+#        display = plotting.plot_anat(flair, title="Brain over Flair",
+#                                     display_mode='z', cut_coords=10,
+#                                     cmap=flair_cmap,
+#                                     axes=fig_id)
+#        display.add_edges(brain)
+        fig_id = plt.subplot(4, 1, 4)
+        display = plotting.plot_anat(flair, title="Brain over Flair",
+                                     display_mode='x', cut_coords=10,
+                                     cmap=flair_cmap,
+                                     axes=fig_id)
+        display.add_edges(brain)
+        # save
+        print 'Saving ', outfile
+        display.savefig(outfile, dpi=300)
+        display.close()
+
+    # save error_log
+    fn = args.outfile + 'QC_BRAIN_error_subjects.txt'
+    print 'Saving ', fn
+    with open(fn, 'w') as f:
+        f.write('\n'.join(log_error_subjects))
+        f.write('\n')
+
+if __name__ == "__main__":
+    spyder_inter = False
+    ws_hist = main(spyder_inter)

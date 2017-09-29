@@ -302,25 +302,25 @@ def main(spyder_inter):
                               cmap=plotting.cm.red_transparent,
                               title="Overlay WM on T1 anatomy",
                               display_mode='z', alpha=0.6,
-                              cut_coords=20, axes=fig_id)
+                              cut_coords=10, axes=fig_id)
             fig_id = plt.subplot(4, 1, 2)
             plotting.plot_roi(roi_img=mask_white_img, bg_img=flair_img,
                               cmap=plotting.cm.red_transparent,
                               title="Overlay WM on FLAIR",
                               display_mode='z', alpha=0.6,
-                              cut_coords=20, axes=fig_id)
+                              cut_coords=10, axes=fig_id)
             fig_id = plt.subplot(4, 1, 3)
             plotting.plot_roi(roi_img=nadwm_img, bg_img=t1_img,
                               cmap=plotting.cm.red_transparent,
                               title="Overlay striped voxels on T1 anatomy",
                               display_mode='z', alpha=.99,
-                              cut_coords=20, axes=fig_id)
+                              cut_coords=10, axes=fig_id)
             fig_id = plt.subplot(4, 1, 4)
             d = plotting.plot_roi(roi_img=nadwm_img, bg_img=flair_img,
                                   cmap=plotting.cm.red_transparent,
                                   title="Overlay striped voxels on FLAIR",
                                   display_mode='z', alpha=.99,
-                                  cut_coords=20, axes=fig_id)
+                                  cut_coords=10, axes=fig_id)
             file_name = args.outfile +\
                 'ws_{}_overlays_{}'.format(extension_dir, s) + '.png'
             print 'Saving ', file_name
