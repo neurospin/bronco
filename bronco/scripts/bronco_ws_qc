@@ -1,3 +1,4 @@
+#! /usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 Created on Thu Mar 23 17:25:17 2017
@@ -136,12 +137,12 @@ def main(spyder_inter):
     if spyder_inter:
         args = parser.parse_args(
             ['-i', '/neurospin/radiomics/studies/metastasis/nsap',
-              '-o', '/tmp/wsq/',
+              '-o', '/volatile/frouin/bronco_ws_qc/bronco_ws_cq_data/',
               '-t', '3',
-              '-r', '/tmp/wsq/',
+              '-r', '/volatile/frouin/bronco_ws_qc/bronco_ws_qc_db/',
               '-s', '187962757123',
-              '-m', 'hybrid',
-              '--seq', 't1',
+              '-m', 'mono',
+              '--seq', 'flair',
               #'-p',
               ])
     else:
@@ -301,25 +302,25 @@ def main(spyder_inter):
             plotting.plot_roi(roi_img=mask_white_img, bg_img=t1_img,
                               cmap=plotting.cm.red_transparent,
                               title="Overlay WM on T1 anatomy",
-                              display_mode='z', alpha=0.6,
+                              display_mode='z', alpha=0.5,
                               cut_coords=10, axes=fig_id)
             fig_id = plt.subplot(4, 1, 2)
             plotting.plot_roi(roi_img=mask_white_img, bg_img=flair_img,
                               cmap=plotting.cm.red_transparent,
                               title="Overlay WM on FLAIR",
-                              display_mode='z', alpha=0.6,
+                              display_mode='z', alpha=0.5,
                               cut_coords=10, axes=fig_id)
             fig_id = plt.subplot(4, 1, 3)
             plotting.plot_roi(roi_img=nadwm_img, bg_img=t1_img,
                               cmap=plotting.cm.red_transparent,
                               title="Overlay striped voxels on T1 anatomy",
-                              display_mode='z', alpha=.99,
+                              display_mode='z', alpha=1,
                               cut_coords=10, axes=fig_id)
             fig_id = plt.subplot(4, 1, 4)
             d = plotting.plot_roi(roi_img=nadwm_img, bg_img=flair_img,
                                   cmap=plotting.cm.red_transparent,
                                   title="Overlay striped voxels on FLAIR",
-                                  display_mode='z', alpha=.99,
+                                  display_mode='z', alpha=1,
                                   cut_coords=10, axes=fig_id)
             file_name = args.outfile +\
                 'ws_{}_overlays_{}'.format(extension_dir, s) + '.png'
@@ -330,7 +331,7 @@ def main(spyder_inter):
             # get index of the current subjects in the list
             ind = list_subjects.index(s)
             # kde plots
-            sns.plt.figure()
+            sns.plt.figure(figsize=(10, 5))
             sns.set_style('whitegrid')
             sns.set_color_codes("pastel")
             ax = sns.plt.subplot(2, 2, 1)
