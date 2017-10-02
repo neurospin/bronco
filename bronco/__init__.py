@@ -10,5 +10,8 @@
 Python package for radiomics.
 """
 
+import matplotlib
 from .info import __version__
 from .wrappers import ANTSWrapper
+
+matplotlib.use("Agg")
