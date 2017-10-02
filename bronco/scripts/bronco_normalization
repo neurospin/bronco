@@ -280,7 +280,7 @@ whitestripe_normfile, whitestripe_mean, whitestripe_std = whitestripe_norm(
     inputfile=bias_field_corrected_file,
     whitestripefile=whitestripefile,
     outdir=whitestripedir,
-    maskfile=inputs["brain"],
+    maskfile=None,
     verbose=verbose)
 if inputs["dosnap"]:
     snaps.append(mosaic(
