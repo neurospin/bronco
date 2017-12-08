@@ -22,7 +22,7 @@ import nibabel
 import numpy
 
 
-def merge_rois(roifiles, outdir):
+def merge_rois(roifiles, outdir, basemaskname="merged_mask.nii.gz"):
     """ Merge the input ROIs.
 
     Parameters
@@ -31,6 +31,8 @@ def merge_rois(roifiles, outdir):
         the ROI images to be merged.
     outdir: str
         the destination folder.
+    fmaskname: str
+        the filename of the mask to be saved.
 
     Returns
     -------
@@ -63,7 +65,7 @@ def merge_rois(roifiles, outdir):
     merged_data[merged_data > 0] = 1
 
     # Save the result
-    merged_file = os.path.join(outdir, "merged_mask.nii.gz")
+    merged_file = os.path.join(outdir, basemaskname)
     im = nibabel.Nifti1Image(merged_data, affine=ref_affine)
     nibabel.save(im, merged_file)
 
