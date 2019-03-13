@@ -16,7 +16,7 @@ import glob
 
 # Package import
 from .pyradiomics import BroncoRadiomicsFeaturesExtractor
-
+from radiomics import featureextractor, getTestCase
 # Third party import
 import nibabel
 import numpy
@@ -86,7 +86,6 @@ def extract_features_from_roi(inputfile, maskfile, outdir, configfile=None):
     configfile: str, default None
         the radiomics configuration file.
 
-
     Returns
     -------
     features: dict
@@ -94,7 +93,8 @@ def extract_features_from_roi(inputfile, maskfile, outdir, configfile=None):
     snaps: list of str
         the intermediate results.
     """
-    # Set the class outdir parameter
+
+    #Set the class outdir parameter
     snapdir = os.path.join(outdir, "snaps")
     if not os.path.isdir(snapdir):
         os.mkdir(snapdir)
@@ -107,7 +107,7 @@ def extract_features_from_roi(inputfile, maskfile, outdir, configfile=None):
         extractor = BroncoRadiomicsFeaturesExtractor(configfile)
 
     # Extract the features
-    features = extractor.execute(inputfile, maskfile, 1)
+    features = extractor.execute(inputfile, maskfile)
 
     # Get intermediate results
     snaps = glob.glob(os.path.join(snapdir, "*.*"))
@@ -115,3 +115,53 @@ def extract_features_from_roi(inputfile, maskfile, outdir, configfile=None):
     return features, snaps
 
 
+def extract_features_from_roi_212(inputfile, maskfile, outdir, configfile=None, 
+    resampledpixelspacing=None, binwidth = None):
+    """ Extract common features using pyradiomics on a given ROI using
+        pyradiomics 2.1.2
+
+    Parameters
+    ----------
+    inputfile: str
+        the input image.
+    maskfile: str
+        the mask image that defines the ROi of interest.
+    outdir: str
+        the destination folder.
+    configfile: str, default None
+        the radiomics configuration file.
+    resampledpixelspacing: str, default None
+        the resampled isotropic-voxel dimension 
+    binwidth: str, default None
+        the bin width;
+
+    Returns
+    -------
+    features: dict
+        the generated features.
+    """
+
+    #Initialize the parameters
+    if resampledpixelspacing != None or binwidth != None:
+        params = {}
+        if resampledpixelspacing != None:
+            voxel_dim = [int(resampledpixelspacing)] * 3
+            params['resampledPixelSpacing'] = voxel_dim
+        if  binwidth != None:
+            params['binwidth'] = int(binwidth)
+        extractor = featureextractor.RadiomicsFeaturesExtractor(**params)
+    else:
+        # Create the feature extractor
+        if configfile is None:
+            extractor = featureextractor.RadiomicsFeaturesExtractor()
+        else:
+            extractor = featureextractor.RadiomicsFeaturesExtractor(configfile)
+
+    #Add the wavelets
+    wave_params = {"wavelet": "coif1", "start_level": 0, "level":1}
+    extractor.enableImageTypes(Wavelet = wave_params)
+
+    # Extract the features
+    features = extractor.execute(inputfile, maskfile)
+
+    return features 
