@@ -148,7 +148,7 @@ def extract_features_from_roi_212(inputfile, maskfile, outdir, configfile=None,
             voxel_dim = [int(resampledpixelspacing)] * 3
             params['resampledPixelSpacing'] = voxel_dim
         if  binwidth != None:
-            params['binwidth'] = int(binwidth)
+            params['binwidth'] = binwidth
         extractor = featureextractor.RadiomicsFeaturesExtractor(**params)
     else:
         # Create the feature extractor
