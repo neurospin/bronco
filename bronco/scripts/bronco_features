@@ -121,11 +121,10 @@ def get_cmd_line_args():
         help="the radiomics configuration file to define the features of "
              "interest.")
     parser.add_argument(
-        "-b", "--binwidth",
+        "-b", "--binwidth", type = float,
         help="the bin width used in the model.")
     parser.add_argument(
-        "-r", "--resampledpixelspacing",
-        type = int, 
+        "-r", "--resampledpixelspacing", type = int,
         help="the dimension of one isotropic voxel of the resampled mask.")
     parser.add_argument(
         "-v", "--verbose",
