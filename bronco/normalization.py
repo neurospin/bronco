@@ -28,7 +28,7 @@ from pygam import PoissonGAM
 import nibabel
 import numpy
 
-# Define global parameters that can be tuned if necassary
+# Define global parameters that can be tuned if necessary
 BINS = {
     "t1": 2000,
     "t2": 300,
@@ -288,10 +288,11 @@ def get_last_mode(
             fig.savefig(snaps[-1])
         if verbose > 1:
             plt.show()
-    
+
     # Histogram smoothing: a penalized spline smoother
     if verbose > 0:
         print("[info] Histogram smoothing ...")
+
     fitted_hist = gam_smooth_hist(
         hist,
         bin_centers,
@@ -420,8 +421,8 @@ def gam_smooth_hist(
         spline_order=spline_order,
         n_splines=25)
     gam = gam.gridsearch(
-        bin_centers,
-        hist,
+        numpy.reshape(bin_centers, (len(bin_centers), 1)),
+        numpy.reshape(hist, (len(hist), 1)),
         return_scores=False)
     fitted_hist = gam.predict(bin_centers)
     if verbose > 0:
