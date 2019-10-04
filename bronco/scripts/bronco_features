@@ -33,7 +33,7 @@ except:
 # Package import
 from bronco import __version__ as version
 from bronco.features import merge_rois
-from bronco.features import extract_features_from_roi
+from bronco.features import extract_features_from_roi_212
 
 # Third party import
 import radiomics
@@ -121,6 +121,12 @@ def get_cmd_line_args():
         help="the radiomics configuration file to define the features of "
              "interest.")
     parser.add_argument(
+        "-b", "--binwidth", type = float,
+        help="the bin width used in the model.")
+    parser.add_argument(
+        "-r", "--resampledpixelspacing", type = int,
+        help="the dimension of one isotropic voxel of the resampled mask.")
+    parser.add_argument(
         "-v", "--verbose",
         type=int, choices=[0, 1, 2], default=0,
         help="increase the verbosity level: 0 silent, [1, 2] verbose.")
@@ -169,11 +175,14 @@ maskfile = merge_rois(inputs["maskfiles"], targetdir, basemaskname=basemaskname)
 """
 Perform feature extraction on each ROI
 """
-features, snaps = extract_features_from_roi(
+features = extract_features_from_roi_212(
     inputfile=inputs["inputfile"],
     maskfile=maskfile,
     outdir=targetdir,
-    configfile=inputs["config"])
+    configfile=inputs["config"],
+    resampledpixelspacing=inputs["resampledpixelspacing"],
+    binwidth = inputs["binwidth"])
+#, snaps
 basefeatname = "sub-{0}_ses-V01_acq-pyradiomics.{1}_features.json"
 basefeatname = basefeatname.format(inputs['sid'], inputs['modelname'])
 featurefile = os.path.join(targetdir, basefeatname)
@@ -190,7 +199,7 @@ if not os.path.isdir(logdir):
     os.mkdir(logdir)
 params = locals()
 outputs = dict([(name, params[name])
-               for name in ("maskfile", "featurefile", "snaps")])
+               for name in ("maskfile", "featurefile")]) #, "snaps"
 for name, final_struct in [("inputs", inputs), ("outputs", outputs),
                            ("runtime", runtime)]:
     log_file = os.path.join(logdir, "sub-{0}_ses-V01_acq-{1}_{2}.json".format(
